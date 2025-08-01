@@ -44,7 +44,11 @@ async def save_item(
     db: Session = Depends(get_db)
 ):
     # Debug: Log the received data
-    print(f"Received item data: {item.dict()}")
+    print(f"🎯 SAVE ITEM ENDPOINT CALLED")
+    print(f"📝 Received item data: {item.dict()}")
+    print(f"⭐ Favorited status: {item.favorited}")
+    print(f"🆔 Item ID (entity_id): {item.item_id}")
+    print(f"📊 Item type: {item.item_type}")
     
     token = credentials.credentials
     username = verify_token(token)
@@ -70,13 +74,23 @@ async def save_item(
     if existing_item:
         # Update the existing item's favorited status if it changed
         if existing_item.favorited != item.favorited:
+            print(f"🔄 UPDATING EXISTING ITEM: {existing_item.item_name}")
+            print(f"   Old favorited status: {existing_item.favorited}")
+            print(f"   New favorited status: {item.favorited}")
             existing_item.favorited = item.favorited
             db.commit()
             db.refresh(existing_item)
-            print(f"Updated favorited status for {existing_item.item_name}: {item.favorited}")
+            print(f"✅ Updated favorited status for {existing_item.item_name}: {item.favorited}")
+        else:
+            print(f"📌 ITEM ALREADY EXISTS with same favorited status: {existing_item.item_name} (favorited: {existing_item.favorited})")
         return existing_item
     
     # Create new saved item
+    print(f"➕ CREATING NEW SAVED ITEM: {item.item_name}")
+    print(f"   Entity ID: {item.item_id}")
+    print(f"   Type: {item.item_type}")
+    print(f"   Favorited: {item.favorited}")
+    
     saved_item = SavedItem(
         user_id=user.id,
         item_id=item.item_id,
@@ -90,6 +104,8 @@ async def save_item(
     db.add(saved_item)
     db.commit()
     db.refresh(saved_item)
+    
+    print(f"✅ SUCCESSFULLY SAVED: {saved_item.item_name} (DB ID: {saved_item.id})")
     
     return saved_item
 
@@ -115,6 +131,14 @@ async def get_saved_items(
         )
     
     saved_items = db.query(SavedItem).filter(SavedItem.user_id == user.id).all()
+    
+    print(f"📋 GET SAVED ITEMS LIST FOR USER: {username}")
+    print(f"   Total items: {len(saved_items)}")
+    favorited_items = [item for item in saved_items if item.favorited]
+    print(f"   Favorited items: {len(favorited_items)}")
+    for item in favorited_items:
+        print(f"      ⭐ {item.item_name} (ID: {item.item_id}, Type: {item.item_type})")
+    
     return saved_items
 
 # Remove item from saved list

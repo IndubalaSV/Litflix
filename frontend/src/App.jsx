@@ -39,7 +39,7 @@ function AppContent() {
     resetNewUserFlag,
     loading: authLoading,
   } = useAuth();
-  const { saveItem, isItemSaved, savedItems, loadSavedItems } = useSavedItems();
+  const { saveItem, isItemSaved, savedItems } = useSavedItems();
 
   const [formData, setFormData] = useState({
     movie: "",
@@ -213,6 +213,8 @@ function AppContent() {
     }
 
     try {
+      console.log("⭐ Favoriting:", item.name || item.title);
+
       // Save to favorites (separate from preferences)
       const favoriteData = {
         item_id: item.entity_id || item.id || "",
@@ -233,45 +235,57 @@ function AppContent() {
       if (saveResult.success) {
         toast.success(`Added ${item.name || item.title} to favorites!`);
 
+        console.log("🔄 Refreshing recommendations...");
         // Refresh recommendations to include the new favorite as additional signals
+        // No need to reload saved items since SavedItemsContext updates state automatically
         await fetchRecommendations();
       } else {
+        console.error("❌ Failed to favorite item:", saveResult.error);
         toast.error("Failed to add to favorites");
       }
     } catch (error) {
-      console.error("Error adding to favorites:", error);
+      console.error("💥 Error adding to favorites:", error);
       toast.error("Failed to add to favorites");
     }
   };
 
   const fetchRecommendations = useCallback(async () => {
+    console.log("🚀 Fetching recommendations...");
     setLoading(true);
     try {
       // Get favorited items' IDs to include as signal.interests.entities
       const favoritedItemIds = savedItems
-        .filter(item => item.favorited === true)
-        .map(item => item.item_id)
-        .filter(id => id); // Remove any undefined/null IDs
+        .filter((item) => item.favorited === true)
+        .map((item) => item.item_id)
+        .filter((id) => id); // Remove any undefined/null IDs
 
-      console.log('🔥 Including favorited items in recommendations:', favoritedItemIds);
+      console.log("� Current savedItems state:", savedItems);
+      console.log(
+        "⭐ Favorited items found:",
+        savedItems.filter((item) => item.favorited === true)
+      );
+      console.log(
+        "🎯 Favorited item IDs for recommendations:",
+        favoritedItemIds
+      );
 
-      // Prepare the request payload
+      // The backend handles favorited items automatically through the database
+      // We just need to trigger the recommendations endpoint
       const requestPayload = {};
-      
-      // Add favorited items as signal.interests.entities if we have any
-      if (favoritedItemIds.length > 0) {
-        requestPayload.favorited_items = favoritedItemIds;
-      }
 
-      console.log('📡 Sending recommendation request with payload:', requestPayload);
+      console.log(
+        "📡 Sending recommendation request to: POST /api/recommendations"
+      );
+      console.log("📝 Request payload:", requestPayload);
 
-      // Always call recommendations endpoint - backend will use saved preferences and favorites
+      // The backend will automatically query the database for favorited items
       const response = await axios.post(
         "http://localhost:8000/api/recommendations",
         requestPayload
       );
+
       setRecommendations(response.data);
-      console.log('✅ Recommendations received with favorited items:', response.data);
+      console.log("✅ Recommendations updated");
     } catch (err) {
       console.error("❌ Failed to fetch recommendations:", err);
       setRecommendations({
@@ -283,39 +297,26 @@ function AppContent() {
     } finally {
       setLoading(false);
     }
-  }, [savedItems]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- Backend handles favorited items automatically
 
-  // Load user preferences and fetch recommendations on mount/login
+  // Load user preferences and fetch recommendations efficiently
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
-      console.log("Loading user preferences...");
+      console.log(
+        "🔄 User authenticated - loading preferences and recommendations..."
+      );
+
+      // Load user preferences first
       loadUserPreferences();
-    }
-  }, [isAuthenticated, authLoading, loadUserPreferences]);
 
-  // Fetch recommendations immediately when user is authenticated
-  useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      console.log("Fetching recommendations...");
-      fetchRecommendations();
-    }
-  }, [isAuthenticated, authLoading, fetchRecommendations]);
+      // Only fetch recommendations after a short delay to avoid race conditions
+      const timeoutId = setTimeout(() => {
+        fetchRecommendations();
+      }, 100);
 
-  // Also fetch recommendations on component mount if already authenticated
-  useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      console.log("Component mount - fetching recommendations...");
-      fetchRecommendations();
+      return () => clearTimeout(timeoutId);
     }
-  }, [isAuthenticated, authLoading, fetchRecommendations]);
-
-  // Fetch recommendations when saved items change (e.g., when favorites are added)
-  useEffect(() => {
-    if (isAuthenticated && !authLoading && savedItems.length > 0) {
-      console.log("Saved items changed - refreshing recommendations...");
-      fetchRecommendations();
-    }
-  }, [savedItems, isAuthenticated, authLoading, fetchRecommendations]);
+  }, [isAuthenticated, authLoading, loadUserPreferences, fetchRecommendations]);
 
   const handleSearchResults = (results) => {
     setSearchResults(results);
@@ -448,8 +449,15 @@ function AppContent() {
                     {renderStarRating(item.rating)}
                     <p className="text-xs text-gray-500 mt-1">
                       {(() => {
-                        if (typeof item.rating_count === "object" && item.rating_count !== null) {
-                          return item.rating_count.user_ratings_count || item.rating_count.count || "0";
+                        if (
+                          typeof item.rating_count === "object" &&
+                          item.rating_count !== null
+                        ) {
+                          return (
+                            item.rating_count.user_ratings_count ||
+                            item.rating_count.count ||
+                            "0"
+                          );
                         }
                         return item.rating_count || "0";
                       })()}{" "}
@@ -711,11 +719,13 @@ function AppContent() {
                         return (
                           <div className="w-full h-full bg-gray-200 flex items-center justify-center">
                             <div className="text-6xl">
-                              {item.type?.replace('urn:entity:', '') === "book"
+                              {item.type?.replace("urn:entity:", "") === "book"
                                 ? "📚"
-                                : item.type?.replace('urn:entity:', '') === "movie"
+                                : item.type?.replace("urn:entity:", "") ===
+                                  "movie"
                                 ? "🎬"
-                                : item.type?.replace('urn:entity:', '') === "tv_show"
+                                : item.type?.replace("urn:entity:", "") ===
+                                  "tv_show"
                                 ? "📺"
                                 : "📍"}
                             </div>
@@ -729,7 +739,10 @@ function AppContent() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleLikeItem(item, item.type?.replace('urn:entity:', '') || "movie");
+                          handleLikeItem(
+                            item,
+                            item.type?.replace("urn:entity:", "") || "movie"
+                          );
                         }}
                         className={`p-2 rounded-full transition-colors ${
                           isItemSaved(item.entity_id || item.id)
@@ -753,7 +766,10 @@ function AppContent() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleSaveItem(item, item.type?.replace('urn:entity:', '') || "movie");
+                          handleSaveItem(
+                            item,
+                            item.type?.replace("urn:entity:", "") || "movie"
+                          );
                         }}
                         className={`p-2 rounded-full transition-colors ${
                           isItemSaved(item.entity_id || item.id)
@@ -774,11 +790,11 @@ function AppContent() {
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs text-gray-500 uppercase font-medium">
-                        {item.type?.replace('urn:entity:', '') === "book"
+                        {item.type?.replace("urn:entity:", "") === "book"
                           ? "📚 Book"
-                          : item.type?.replace('urn:entity:', '') === "movie"
+                          : item.type?.replace("urn:entity:", "") === "movie"
                           ? "🎬 Movie"
-                          : item.type?.replace('urn:entity:', '') === "tv_show"
+                          : item.type?.replace("urn:entity:", "") === "tv_show"
                           ? "📺 TV Show"
                           : "📍 Place"}
                       </span>
@@ -812,8 +828,15 @@ function AppContent() {
                         {renderStarRating(item.rating)}
                         <p className="text-xs text-gray-500 mt-1">
                           {(() => {
-                            if (typeof item.rating_count === "object" && item.rating_count !== null) {
-                              return item.rating_count.user_ratings_count || item.rating_count.count || "0";
+                            if (
+                              typeof item.rating_count === "object" &&
+                              item.rating_count !== null
+                            ) {
+                              return (
+                                item.rating_count.user_ratings_count ||
+                                item.rating_count.count ||
+                                "0"
+                              );
                             }
                             return item.rating_count || "0";
                           })()}{" "}
@@ -866,7 +889,10 @@ function AppContent() {
 
                     {item.external && item.external.goodreads && (
                       <p className="text-xs text-gray-500 mb-1">
-                        Goodreads ID: {typeof item.external.goodreads === "object" ? JSON.stringify(item.external.goodreads) : item.external.goodreads}
+                        Goodreads ID:{" "}
+                        {typeof item.external.goodreads === "object"
+                          ? JSON.stringify(item.external.goodreads)
+                          : item.external.goodreads}
                       </p>
                     )}
                   </div>
@@ -1199,8 +1225,15 @@ function AppContent() {
                       {renderStarRating(popupItem.rating)}
                       <p className="text-sm text-gray-500 mt-1">
                         {(() => {
-                          if (typeof popupItem.rating_count === "object" && popupItem.rating_count !== null) {
-                            return popupItem.rating_count.user_ratings_count || popupItem.rating_count.count || "0";
+                          if (
+                            typeof popupItem.rating_count === "object" &&
+                            popupItem.rating_count !== null
+                          ) {
+                            return (
+                              popupItem.rating_count.user_ratings_count ||
+                              popupItem.rating_count.count ||
+                              "0"
+                            );
                           }
                           return popupItem.rating_count || "0";
                         })()}{" "}
@@ -1213,7 +1246,10 @@ function AppContent() {
                   <div className="flex space-x-2 mt-4">
                     <button
                       onClick={() =>
-                        handleLikeItem(popupItem, popupItem.type?.replace('urn:entity:', '') || "book")
+                        handleLikeItem(
+                          popupItem,
+                          popupItem.type?.replace("urn:entity:", "") || "book"
+                        )
                       }
                       className={`flex-1 p-3 rounded-lg transition-colors ${
                         isItemSaved(popupItem.entity_id || popupItem.id)
@@ -1231,7 +1267,10 @@ function AppContent() {
                     </button>
                     <button
                       onClick={() =>
-                        handleSaveItem(popupItem, popupItem.type?.replace('urn:entity:', '') || "book")
+                        handleSaveItem(
+                          popupItem,
+                          popupItem.type?.replace("urn:entity:", "") || "book"
+                        )
                       }
                       className={`flex-1 p-3 rounded-lg transition-colors ${
                         isItemSaved(popupItem.entity_id || popupItem.id)
@@ -1260,33 +1299,46 @@ function AppContent() {
                     )}
 
                   {/* Long Description */}
-                  {popupItem.properties &&
-                    popupItem.properties.description && (
-                      <div className="mb-6">
-                        <h3 className="text-lg font-semibold mb-2">
-                          Full Description
-                        </h3>
-                        <div 
-                          className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                          dangerouslySetInnerHTML={{ 
-                            __html: popupItem.properties.description 
-                              ?.replace(/<br\s*\/?>/gi, '<br>')
+                  {popupItem.properties && popupItem.properties.description && (
+                    <div className="mb-6">
+                      <h3 className="text-lg font-semibold mb-2">
+                        Full Description
+                      </h3>
+                      <div
+                        className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{
+                          __html:
+                            popupItem.properties.description
+                              ?.replace(/<br\s*\/?>/gi, "<br>")
                               ?.replace(/<p>/gi, '<p class="mb-3">')
-                              ?.replace(/<strong>/gi, '<strong class="font-semibold">')
+                              ?.replace(
+                                /<strong>/gi,
+                                '<strong class="font-semibold">'
+                              )
                               ?.replace(/<em>/gi, '<em class="italic">')
-                              ?.replace(/<ul>/gi, '<ul class="list-disc list-inside mb-3">')
-                              ?.replace(/<ol>/gi, '<ol class="list-decimal list-inside mb-3">')
+                              ?.replace(
+                                /<ul>/gi,
+                                '<ul class="list-disc list-inside mb-3">'
+                              )
+                              ?.replace(
+                                /<ol>/gi,
+                                '<ol class="list-decimal list-inside mb-3">'
+                              )
                               ?.replace(/<li>/gi, '<li class="mb-1">')
-                              ?.replace(/<h[1-6]>/gi, '<h3 class="text-lg font-semibold mb-2 mt-4">')
-                              ?.replace(/<\/h[1-6]>/gi, '</h3>')
-                              || popupItem.properties.description
-                          }}
-                        />
-                      </div>
-                    )}
+                              ?.replace(
+                                /<h[1-6]>/gi,
+                                '<h3 class="text-lg font-semibold mb-2 mt-4">'
+                              )
+                              ?.replace(/<\/h[1-6]>/gi, "</h3>") ||
+                            popupItem.properties.description,
+                        }}
+                      />
+                    </div>
+                  )}
 
                   {(!popupItem.properties ||
-                    (!popupItem.properties.short_description && !popupItem.properties.description)) && (
+                    (!popupItem.properties.short_description &&
+                      !popupItem.properties.description)) && (
                     <div className="mb-6">
                       <h3 className="text-lg font-semibold mb-2">
                         Description
@@ -1342,7 +1394,7 @@ function AppContent() {
                         {safeRender(popupItem.properties.format)}
                       </div>
                     )}
-                    
+
                     {/* Movie/TV Show specific fields */}
                     {popupItem.properties?.release_year && (
                       <div>
@@ -1398,7 +1450,7 @@ function AppContent() {
                         {safeRender(popupItem.properties.network)}
                       </div>
                     )}
-                    
+
                     {/* External IDs */}
                     {popupItem.external?.goodreads && (
                       <div>
