@@ -68,7 +68,12 @@ async def save_item(
     ).first()
     
     if existing_item:
-        # Return the existing item instead of throwing an error
+        # Update the existing item's favorited status if it changed
+        if existing_item.favorited != item.favorited:
+            existing_item.favorited = item.favorited
+            db.commit()
+            db.refresh(existing_item)
+            print(f"Updated favorited status for {existing_item.item_name}: {item.favorited}")
         return existing_item
     
     # Create new saved item

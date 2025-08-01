@@ -88,7 +88,6 @@ async def convert_natural_language(query: GeminiQuery):
         # Get response from Gemini
         response = model.generate_content(prompt)
         
-        # Parse the response
         try:
             # Extract JSON from the response
             response_text = response.text.strip()
@@ -158,7 +157,6 @@ async def convert_natural_language(query: GeminiQuery):
 
 @gemini_router.get("/health")
 async def gemini_health():
-    """Check if Gemini API is working"""
     try:
         if not model:
             raise HTTPException(

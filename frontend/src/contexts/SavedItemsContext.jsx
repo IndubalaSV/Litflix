@@ -48,7 +48,7 @@ export const SavedItemsProvider = ({ children }) => {
       const requestData = {
         item_id: item.item_id || item.entity_id || item.id,
         item_name: item.item_name || item.name || item.title,
-        item_type: item.item_type || item.type || 'book',
+        item_type: (item.item_type || item.type || 'book').replace('urn:entity:', ''),
         item_image: item.item_image || item.image_url || item.cover_image || (item.properties && item.properties.image && item.properties.image.url) || '',
         item_description: item.item_description || item.description || item.short_description || '',
         favorited: item.favorited || false
@@ -78,8 +78,10 @@ export const SavedItemsProvider = ({ children }) => {
     if (!isAuthenticated) return { success: false, error: 'Not authenticated' }
 
     try {
+      console.log('Removing item with ID:', itemId)
       await axios.delete(`http://localhost:8000/api/saved/remove/${itemId}`)
       setSavedItems(prev => prev.filter(item => item.item_id !== itemId))
+      console.log('Item removed successfully')
       return { success: true }
     } catch (error) {
       console.error('Failed to remove item:', error)

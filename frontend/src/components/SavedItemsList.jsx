@@ -9,16 +9,26 @@ const SavedItemsList = ({ isOpen, onClose }) => {
   const [removingItem, setRemovingItem] = useState(null)
 
   const handleRemoveItem = async (itemId) => {
+    console.log('Attempting to remove item:', itemId)
     setRemovingItem(itemId)
     try {
-      await removeItem(itemId)
+      const result = await removeItem(itemId)
+      console.log('Remove result:', result)
+      if (!result.success) {
+        console.error('Failed to remove item:', result.error)
+      }
+    } catch (error) {
+      console.error('Error in handleRemoveItem:', error)
     } finally {
       setRemovingItem(null)
     }
   }
 
   const getItemIcon = (type) => {
-    switch (type) {
+    // Handle both "book" and "urn:entity:book" formats
+    const cleanType = type?.replace('urn:entity:', '') || type
+    
+    switch (cleanType) {
       case 'book':
         return <BookOpen className="w-6 h-6 text-gray-400" />
       case 'movie':
@@ -66,13 +76,13 @@ const SavedItemsList = ({ isOpen, onClose }) => {
                   <Heart className="w-5 h-5 text-red-500 mr-2" />
                   My Favorites
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
                   {savedItems.filter(item => item.favorited).map((item) => (
                     <div key={item.id} className="bg-red-50 border border-red-200 rounded-lg p-4 relative">
                       <div className="flex items-center space-x-2 mb-2">
                         {getItemIcon(item.item_type)}
                         <span className="text-xs text-red-600 uppercase font-medium">
-                          {item.item_type}
+                          {item.item_type?.replace('urn:entity:', '') || item.item_type}
                         </span>
                         <button
                           onClick={() => handleRemoveItem(item.item_id)}
@@ -117,7 +127,7 @@ const SavedItemsList = ({ isOpen, onClose }) => {
             {/* Saved Items Section */}
             <div>
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Saved Items</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {savedItems.map((item) => (
                 <div
                   key={item.id}
@@ -126,9 +136,9 @@ const SavedItemsList = ({ isOpen, onClose }) => {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center space-x-2">
                       {getItemIcon(item.item_type)}
-                      <span className="text-xs text-gray-500 uppercase font-medium">
-                        {item.item_type}
-                      </span>
+                                             <span className="text-xs text-gray-500 uppercase font-medium">
+                         {item.item_type?.replace('urn:entity:', '') || item.item_type}
+                       </span>
                     </div>
                     <button
                       onClick={() => handleRemoveItem(item.item_id)}

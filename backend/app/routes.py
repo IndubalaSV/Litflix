@@ -104,15 +104,7 @@ def get_insights(entity_ids: list[str], age: str, gender: str, domain: str) -> l
 
 
 def get_popular_books(entity_ids: list[str], age: str, gender: str) -> list:
-    # For best sellers, we'll get popular books with user-specific signals for better relevance
-    joined_ids = ",".join(entity_ids) if entity_ids else ""
-    
-    # Debug: Log the API call parameters
-    print(f"🔥 Qloo API call for popular books:")
-    print(f"   - Entity IDs: {entity_ids}")
-    print(f"   - Joined IDs: {joined_ids}")
-    print(f"   - Age: {age}, Gender: {gender}")
-    
+    # For best sellers, we'll get general popular books without user-specific signals
     try:
         params = {
             "filter.type": "urn:entity:book",
@@ -121,13 +113,6 @@ def get_popular_books(entity_ids: list[str], age: str, gender: str) -> list:
             "take": "10"
         }
         
-        # Add user signals if we have entity IDs (favorites + preferences)
-        if joined_ids:
-            params["signal.interests.entities"] = joined_ids
-            params["signal.demographics.age"] = age
-            params["signal.demographics.gender"] = gender
-        
-        print(f"   - Full URL params: {params}")
         
         response = requests.get(
             f"{QLOO_API_BASE}/v2/insights",
@@ -302,16 +287,31 @@ async def get_recommendations(preference: PreferenceInput, current_user: Optiona
                 }
             
             # Get user's favorite items (saved items with favorited=True)
+            print(f"🔍 Querying for favorited items for user {current_user['id']}")
+            
+            # First, let's see all saved items for this user
+            all_saved_items = db.query(SavedItem).filter(SavedItem.user_id == current_user["id"]).all()
+            print(f"Total saved items for user: {len(all_saved_items)}")
+            for item in all_saved_items:
+                print(f"  - {item.item_name} (ID: {item.item_id}, Favorited: {item.favorited}, Type: {type(item.favorited)})")
+            
+            # Now get only favorited items
             saved_items = db.query(SavedItem).filter(
                 SavedItem.user_id == current_user["id"],
                 SavedItem.favorited == True
             ).all()
             favorite_entities = [item.item_id for item in saved_items if item.item_id]
             
+            print(f"🔍 Favorited items query result: {len(saved_items)} items")
+            for item in saved_items:
+                print(f"  - FAVORITED: {item.item_name} (ID: {item.item_id}, Favorited: {item.favorited})")
+            
             # Debug: Log favorited items
             print(f"Found {len(saved_items)} favorited items for user {current_user['id']}")
+            print(f"Raw saved_items: {[(item.item_name, item.item_id, item.favorited) for item in saved_items]}")
             for item in saved_items:
-                print(f"  - {item.item_name} (ID: {item.item_id}, Type: {item.item_type})")
+                print(f"  - {item.item_name} (ID: {item.item_id}, Type: {item.item_type}, Favorited: {item.favorited})")
+            print(f"Extracted favorite_entities: {favorite_entities}")
             
         finally:
             db.close()
@@ -351,8 +351,13 @@ async def get_recommendations(preference: PreferenceInput, current_user: Optiona
             entity_ids.append(place_id)
 
     # Add favorites as additional signals (not just fallback)
+    print(f"Before adding favorites: entity_ids = {entity_ids}")
     if favorite_entities:
+        print(f"Adding favorites: {favorite_entities}")
         entity_ids.extend(favorite_entities)
+        print(f"After adding favorites: entity_ids = {entity_ids}")
+    else:
+        print("No favorites to add")
 
     if not entity_ids:
         raise HTTPException(status_code=400, detail="No valid entity IDs found.")

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Share2,
@@ -39,7 +39,7 @@ function AppContent() {
     resetNewUserFlag,
     loading: authLoading,
   } = useAuth();
-  const { saveItem, isItemSaved } = useSavedItems();
+  const { saveItem, isItemSaved, savedItems, loadSavedItems } = useSavedItems();
 
   const [formData, setFormData] = useState({
     movie: "",
@@ -80,7 +80,7 @@ function AppContent() {
     "55_and_older",
   ];
 
-  const loadUserPreferences = async () => {
+  const loadUserPreferences = useCallback(async () => {
     const result = await getPreferences();
     if (result.success && result.data) {
       setUserPreferences(result.data);
@@ -93,7 +93,7 @@ function AppContent() {
         gender: result.data.gender || "",
       }));
     }
-  };
+  }, [getPreferences]);
 
   const checkAndShowPreferencesModal = async () => {
     // DOUBLE CHECK: If user has seen preferences before, NEVER show modal
@@ -244,15 +244,34 @@ function AppContent() {
     }
   };
 
-  const fetchRecommendations = async () => {
+  const fetchRecommendations = useCallback(async () => {
     setLoading(true);
     try {
+      // Get favorited items' IDs to include as signal.interests.entities
+      const favoritedItemIds = savedItems
+        .filter(item => item.favorited === true)
+        .map(item => item.item_id)
+        .filter(id => id); // Remove any undefined/null IDs
+
+      console.log('🔥 Including favorited items in recommendations:', favoritedItemIds);
+
+      // Prepare the request payload
+      const requestPayload = {};
+      
+      // Add favorited items as signal.interests.entities if we have any
+      if (favoritedItemIds.length > 0) {
+        requestPayload.favorited_items = favoritedItemIds;
+      }
+
+      console.log('📡 Sending recommendation request with payload:', requestPayload);
+
       // Always call recommendations endpoint - backend will use saved preferences and favorites
       const response = await axios.post(
         "http://localhost:8000/api/recommendations",
-        {}
+        requestPayload
       );
       setRecommendations(response.data);
+      console.log('✅ Recommendations received with favorited items:', response.data);
     } catch (err) {
       console.error("❌ Failed to fetch recommendations:", err);
       setRecommendations({
@@ -264,7 +283,7 @@ function AppContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [savedItems]);
 
   // Load user preferences and fetch recommendations on mount/login
   useEffect(() => {
@@ -272,7 +291,7 @@ function AppContent() {
       console.log("Loading user preferences...");
       loadUserPreferences();
     }
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, loadUserPreferences]);
 
   // Fetch recommendations immediately when user is authenticated
   useEffect(() => {
@@ -280,7 +299,7 @@ function AppContent() {
       console.log("Fetching recommendations...");
       fetchRecommendations();
     }
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, fetchRecommendations]);
 
   // Also fetch recommendations on component mount if already authenticated
   useEffect(() => {
@@ -288,9 +307,17 @@ function AppContent() {
       console.log("Component mount - fetching recommendations...");
       fetchRecommendations();
     }
-  }, []); // Empty dependency array - runs only on mount
+  }, [isAuthenticated, authLoading, fetchRecommendations]);
 
-  const handleSearchResults = (results, entityType) => {
+  // Fetch recommendations when saved items change (e.g., when favorites are added)
+  useEffect(() => {
+    if (isAuthenticated && !authLoading && savedItems.length > 0) {
+      console.log("Saved items changed - refreshing recommendations...");
+      fetchRecommendations();
+    }
+  }, [savedItems, isAuthenticated, authLoading, fetchRecommendations]);
+
+  const handleSearchResults = (results) => {
     setSearchResults(results);
   };
 
@@ -684,11 +711,11 @@ function AppContent() {
                         return (
                           <div className="w-full h-full bg-gray-200 flex items-center justify-center">
                             <div className="text-6xl">
-                              {item.type === "book"
+                              {item.type?.replace('urn:entity:', '') === "book"
                                 ? "📚"
-                                : item.type === "movie"
+                                : item.type?.replace('urn:entity:', '') === "movie"
                                 ? "🎬"
-                                : item.type === "tv_show"
+                                : item.type?.replace('urn:entity:', '') === "tv_show"
                                 ? "📺"
                                 : "📍"}
                             </div>
@@ -702,7 +729,7 @@ function AppContent() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleLikeItem(item, item.type || "movie");
+                          handleLikeItem(item, item.type?.replace('urn:entity:', '') || "movie");
                         }}
                         className={`p-2 rounded-full transition-colors ${
                           isItemSaved(item.entity_id || item.id)
@@ -726,7 +753,7 @@ function AppContent() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleSaveItem(item, item.type || "movie");
+                          handleSaveItem(item, item.type?.replace('urn:entity:', '') || "movie");
                         }}
                         className={`p-2 rounded-full transition-colors ${
                           isItemSaved(item.entity_id || item.id)
@@ -747,11 +774,11 @@ function AppContent() {
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs text-gray-500 uppercase font-medium">
-                        {item.type === "book"
+                        {item.type?.replace('urn:entity:', '') === "book"
                           ? "📚 Book"
-                          : item.type === "movie"
+                          : item.type?.replace('urn:entity:', '') === "movie"
                           ? "🎬 Movie"
-                          : item.type === "tv_show"
+                          : item.type?.replace('urn:entity:', '') === "tv_show"
                           ? "📺 TV Show"
                           : "📍 Place"}
                       </span>
@@ -1186,7 +1213,7 @@ function AppContent() {
                   <div className="flex space-x-2 mt-4">
                     <button
                       onClick={() =>
-                        handleLikeItem(popupItem, popupItem.type || "book")
+                        handleLikeItem(popupItem, popupItem.type?.replace('urn:entity:', '') || "book")
                       }
                       className={`flex-1 p-3 rounded-lg transition-colors ${
                         isItemSaved(popupItem.entity_id || popupItem.id)
@@ -1204,7 +1231,7 @@ function AppContent() {
                     </button>
                     <button
                       onClick={() =>
-                        handleSaveItem(popupItem, popupItem.type || "book")
+                        handleSaveItem(popupItem, popupItem.type?.replace('urn:entity:', '') || "book")
                       }
                       className={`flex-1 p-3 rounded-lg transition-colors ${
                         isItemSaved(popupItem.entity_id || popupItem.id)
@@ -1239,9 +1266,22 @@ function AppContent() {
                         <h3 className="text-lg font-semibold mb-2">
                           Full Description
                         </h3>
-                        <p className="text-gray-700 leading-relaxed">
-                          {popupItem.properties.description}
-                        </p>
+                        <div 
+                          className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ 
+                            __html: popupItem.properties.description 
+                              ?.replace(/<br\s*\/?>/gi, '<br>')
+                              ?.replace(/<p>/gi, '<p class="mb-3">')
+                              ?.replace(/<strong>/gi, '<strong class="font-semibold">')
+                              ?.replace(/<em>/gi, '<em class="italic">')
+                              ?.replace(/<ul>/gi, '<ul class="list-disc list-inside mb-3">')
+                              ?.replace(/<ol>/gi, '<ol class="list-decimal list-inside mb-3">')
+                              ?.replace(/<li>/gi, '<li class="mb-1">')
+                              ?.replace(/<h[1-6]>/gi, '<h3 class="text-lg font-semibold mb-2 mt-4">')
+                              ?.replace(/<\/h[1-6]>/gi, '</h3>')
+                              || popupItem.properties.description
+                          }}
+                        />
                       </div>
                     )}
 
@@ -1259,6 +1299,7 @@ function AppContent() {
 
                   {/* Metadata Grid */}
                   <div className="grid grid-cols-2 gap-4 text-sm">
+                    {/* Book-specific fields */}
                     {popupItem.properties?.publication_year && (
                       <div>
                         <span className="font-medium">Publication year:</span>{" "}
@@ -1301,10 +1342,80 @@ function AppContent() {
                         {safeRender(popupItem.properties.format)}
                       </div>
                     )}
+                    
+                    {/* Movie/TV Show specific fields */}
+                    {popupItem.properties?.release_year && (
+                      <div>
+                        <span className="font-medium">Release year:</span>{" "}
+                        {safeRender(popupItem.properties.release_year)}
+                      </div>
+                    )}
+                    {popupItem.properties?.runtime && (
+                      <div>
+                        <span className="font-medium">Runtime:</span>{" "}
+                        {safeRender(popupItem.properties.runtime)}
+                      </div>
+                    )}
+                    {popupItem.properties?.director && (
+                      <div>
+                        <span className="font-medium">Director:</span>{" "}
+                        {safeRender(popupItem.properties.director)}
+                      </div>
+                    )}
+                    {popupItem.properties?.cast && (
+                      <div>
+                        <span className="font-medium">Cast:</span>{" "}
+                        {safeRender(popupItem.properties.cast)}
+                      </div>
+                    )}
+                    {popupItem.properties?.studio && (
+                      <div>
+                        <span className="font-medium">Studio:</span>{" "}
+                        {safeRender(popupItem.properties.studio)}
+                      </div>
+                    )}
+                    {popupItem.properties?.rating && (
+                      <div>
+                        <span className="font-medium">Rating:</span>{" "}
+                        {safeRender(popupItem.properties.rating)}
+                      </div>
+                    )}
+                    {popupItem.properties?.seasons && (
+                      <div>
+                        <span className="font-medium">Seasons:</span>{" "}
+                        {safeRender(popupItem.properties.seasons)}
+                      </div>
+                    )}
+                    {popupItem.properties?.episodes && (
+                      <div>
+                        <span className="font-medium">Episodes:</span>{" "}
+                        {safeRender(popupItem.properties.episodes)}
+                      </div>
+                    )}
+                    {popupItem.properties?.network && (
+                      <div>
+                        <span className="font-medium">Network:</span>{" "}
+                        {safeRender(popupItem.properties.network)}
+                      </div>
+                    )}
+                    
+                    {/* External IDs */}
                     {popupItem.external?.goodreads && (
                       <div>
                         <span className="font-medium">Goodreads ID:</span>{" "}
                         {safeRender(popupItem.external.goodreads)}
+                      </div>
+                    )}
+                    {popupItem.external?.imdb && (
+                      <div>
+                        <span className="font-medium">IMDB ID:</span>{" "}
+                        {safeRender(popupItem.external.imdb)}
+                      </div>
+                    )}
+                    {popupItem.external?.tmdb && (
+                      <div>
+                        <span className="font-medium">TMDB ID:</span>{" "}
+                        {safeRender(popupItem.external.tmdb)}
                       </div>
                     )}
                   </div>
